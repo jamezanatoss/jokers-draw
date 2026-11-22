@@ -25,7 +25,15 @@ function attrs(o: CardOpts, label: string): string {
   return parts.join(' ');
 }
 
+/** A real card id (0–19 = rank*4+suit, 20/21 = Jokers). Placeholders for unknown cards are negative. */
+export const isKnownCard = (c: unknown): c is Card => Number.isInteger(c) && (c as number) >= 0 && (c as number) <= 21;
+
 export function cardFace(c: Card, o: CardOpts = {}): string {
+  // An unknown card (not revealed yet) can only ever be shown face down — never as "undefined".
+  if (!isKnownCard(c)) {
+    if (import.meta.env.DEV) console.warn(`[ui-guard] cardFace(${String(c)}): not a known card, drawing a back`);
+    return cardBack(o);
+  }
   const tag = o.button ? 'button' : 'div';
   const sel = o.selected ? ' selected' : '';
   const extra = o.cls ? ` ${o.cls}` : '';

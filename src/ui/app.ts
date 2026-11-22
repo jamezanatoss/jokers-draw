@@ -34,6 +34,7 @@ import { SWIPE, exchangeDisplay, sortedDisplay, swipeHand } from './animation';
 import { amountRange, clampAmount, defaultAmount, previews } from './betControls';
 import { cardBack, cardFace, discardCard, rankExample } from './cardView';
 import { type RulesLang, modeLineTh, rulesHtmlTh } from './rulesTh';
+import { setHtml } from './safeHtml';
 import { Sound } from './sound';
 import { RANKINGS, RULES_HTML, TIEBREAK_LABEL, TITLE } from './text';
 import { type LinkStatus, OnlineConnection, forgetRoom, lastRoom, randomRoomCode, rememberSeat } from '../online/connection';
@@ -167,6 +168,13 @@ export class App {
   private disp: { you: Card[]; ai: Card[] } = { you: [], ai: [] };
   /** True while a card-swipe animation runs: cards and action buttons are blocked. */
   private animating = false;
+  /** Number of the newest card animation; an older one that ends late must not continue the game. */
+  private animSeq = 0;
+  /**
+   * The current hand's result has been shown (handOver ran: both hands revealed, logged). Until
+   * then NEXT HAND is disabled, so a hand can never be skipped while its last cards are moving.
+   */
+  private resultShown = false;
   private stats = { hands: 0, won: 0, showdowns: 0 };
   private playMode: PlayMode = loadPref('mode', 'ai', ['ai', 'online'] as const);
   private online: OnlineState | null = null;
@@ -316,6 +324,7 @@ export class App {
   /** Show the freshly dealt hand in `this.match`: log, ante, swipe-in (resolves when it has landed). */
   private showNewHand(): Promise<void> {
     const m = this.match!;
+    this.resultShown = false;
     this.selected.clear();
     this.amount = 0; // never carried over between hands
     // Cards arrive in dealt order; they are sorted by the swipe animation.
@@ -343,11 +352,13 @@ export class App {
    */
   private async animate(run: () => Promise<unknown>): Promise<void> {
     const g = this.gen;
+    const token = ++this.animSeq;
     this.animating = true;
     this.busy = true;
     this.render();
     await run();
-    if (g !== this.gen) return;
+    // A new game, or a newer animation that started meanwhile, owns the game flow now.
+    if (g !== this.gen || token !== this.animSeq) return;
     this.animating = false;
     this.afterAction();
   }
@@ -368,7 +379,7 @@ export class App {
       renderSorted: () => {
         if (g !== this.gen) return [];
         sortNow();
-        handEl.innerHTML = this.cardsHtml(p);
+        setHtml(handEl, this.cardsHtml(p), 'hand');
         return Array.from(handEl.querySelectorAll<HTMLElement>('.card'));
       },
       swish: () => this.sound.play('swish'),
@@ -453,7 +464,7 @@ export class App {
     t.className = `action-toast k-${a.type} w-${who}`;
     const final = max && (a.type === 'bet' || a.type === 'raise') && before.phase === 'turn';
     const tag = note ?? (max ? (final ? 'FINAL ROUND' : `MAX ${before.cap}`) : '');
-    t.innerHTML = `<span class="tw">${who === 'you' ? 'YOU' : this.oppTag}</span><b>${text}</b>${tag ? `<em>${tag}</em>` : ''}`;
+    setHtml(t, `<span class="tw">${who === 'you' ? 'YOU' : this.oppTag}</span><b>${text}</b>${tag ? `<em>${tag}</em>` : ''}`, 'action banner');
     void t.offsetWidth; // restart the CSS animation
     t.classList.add('show');
     window.clearTimeout(this.toastTimer);
@@ -645,6 +656,8 @@ export class App {
     const m = this.match!;
     const h = m.hand!;
     const out = h.outcome!;
+    if (this.resultShown) return; // already shown (e.g. a late duplicate call)
+    this.resultShown = true;
     const showdown = out.kind === 'showdown';
     // Both hands are revealed after every hand; the AI may learn from what it sees.
     this.ai?.observeHandEnd(makeView(h, AI), h.hands[HUMAN]);
@@ -679,7 +692,7 @@ export class App {
 
   private next(): void {
     const m = this.match;
-    if (!m || !m.hand || m.hand.phase !== 'over') return;
+    if (!m || !m.hand || m.hand.phase !== 'over' || !this.resultShown || this.animating) return;
     if (m.winner !== null) {
       this.screen = 'over';
       this.render();
@@ -982,6 +995,7 @@ export class App {
     this.lastAction = { who: 'info', html: note };
     this.pushLog('info', note);
     this.busy = false;
+    if (h.history.length === 0 || h.phase !== 'over') this.resultShown = false;
     if (o.room?.status === 'over' && o.room.forfeit) {
       this.screen = 'over';
       this.render();
@@ -1052,6 +1066,7 @@ export class App {
       }
     }
     this.match = m;
+    if (m.hand!.phase === 'over') this.disp.ai = sortedDisplay(m.hand!.hands[AI]); // revealed cards, never placeholders
     this.selected.clear();
     this.queuePotCoins(HUMAN, before, m.hand!);
     this.actionSound(action, before);
@@ -1094,6 +1109,12 @@ export class App {
       }
     }
     this.match = m;
+    if (m.hand!.phase === 'over') {
+      // The hand ended with this move: show the revealed cards (they flip over) instead of
+      // swiping in placeholders for cards we only now know.
+      this.disp.ai = sortedDisplay(m.hand!.hands[AI]);
+      swipe = null;
+    }
     this.queuePotCoins(AI, before, m.hand!);
     this.actionSound(action, before);
     const msg = timedOut ? "Your opponent's time ran out — automatic <b>DROP</b>." : this.describe('ai', action, before, exchanged);
@@ -1655,7 +1676,7 @@ export class App {
     };
     const cur = currentBet(h);
 
-    this.el.felt.innerHTML = `
+    setHtml(this.el.felt, `
       <div class="zone ai-zone ${h.toAct === AI && !over ? 'active' : ''}">
         ${seat(AI, this.oppSeatName())}
         <div class="hand ai-hand">${aiCards}</div>
@@ -1685,7 +1706,9 @@ export class App {
         ${seat(HUMAN, 'You')}
         <div class="hand you-hand" role="group" aria-label="Your hand — select cards to exchange">${youCards}</div>
         <div class="zone-side">${handName(HUMAN)}</div>
-      </div>`;
+      </div>`,
+      'table',
+    );
   }
 
   /**
@@ -1726,7 +1749,7 @@ export class App {
       const over = h.phase === 'over';
       return this.disp.ai
         .map((c, i) =>
-          over
+          over && c >= 0
             ? cardFace(c, { cls: this.anim.flip ? 'flip-in' : '', style: `--i:${i}`, slot: i })
             : cardBack({ slot: i }),
         )
@@ -1795,8 +1818,8 @@ export class App {
     const m = this.match;
     const h = m?.hand;
     if (!m || !h || this.screen !== 'play') {
-      a.innerHTML = `<div class="panel-status">${this.screen === 'over' ? 'Match over' : 'No game in progress'}</div>
-        <button type="button" class="act primary" data-cmd="new" data-key="new"><span class="act-name">NEW GAME</span></button>`;
+      setHtml(a, `<div class="panel-status">${this.screen === 'over' ? 'Match over' : 'No game in progress'}</div>
+        <button type="button" class="act primary" data-cmd="new" data-key="new"><span class="act-name">NEW GAME</span></button>`, 'action panel');
       return;
     }
     if (h.phase === 'over') {
@@ -1814,10 +1837,10 @@ export class App {
             : oppReady
               ? 'Your opponent is ready for the next hand.<span data-clock="auto"></span>'
               : 'The next hand starts when both players press Next.<span data-clock="auto"></span>';
-      a.innerHTML = `<div class="panel-status">${h.outcome!.winner === HUMAN ? 'You won the hand' : `${this.TheOpp} won the hand`}</div>
-        <button type="button" class="act primary next" data-cmd="next" data-key="next" ${o?.waiting ? 'disabled' : ''}>
+      setHtml(a, `<div class="panel-status">${h.outcome!.winner === HUMAN ? 'You won the hand' : `${this.TheOpp} won the hand`}</div>
+        <button type="button" class="act primary next" data-cmd="next" data-key="next" ${o?.waiting || !this.resultShown || this.animating ? 'disabled' : ''}>
           <span class="act-name">${last ? 'FINAL RESULT' : o?.waiting ? 'WAITING…' : 'NEXT HAND'}</span><span class="act-sub">Enter</span></button>
-        <p class="panel-hint">${hint}</p>`;
+        <p class="panel-hint">${hint}</p>`, 'action panel');
       return;
     }
     const mine = h.toAct === HUMAN && !this.busy;
@@ -1868,13 +1891,13 @@ export class App {
         : btn('bet', pv.bet, true) + btn('raise', pv.raise, !pv.bet) + btn('call', pv.call) + btn('drop', pv.drop);
 
     const status = this.animating ? 'Sorting cards…' : mine ? 'Your turn' : this.ai?.cheats ? 'AI is peeking…' : this.waitingStatus();
-    a.innerHTML = `
+    setHtml(a, `
       <div class="panel-status ${mine ? 'mine' : ''}">${status}</div>
       ${finalHint}
       ${hint ? `<div class="exchange-box">${hint}${this.canSelect(h) && h.deck.length < 5 ? `<small>Deck: ${plural(h.deck.length, 'card')} left.</small>` : ''}</div>` : ''}
       ${amountBlock}
       <div class="action-buttons" role="toolbar" aria-label="Betting actions">${buttons}</div>
-      <p class="panel-hint keys"><kbd>↑</kbd><kbd>↓</kbd> amount · <kbd>←</kbd><kbd>→</kbd> move · <kbd>B</kbd><kbd>R</kbd><kbd>C</kbd><kbd>D</kbd> act · <kbd>M</kbd> mute</p>`;
+      <p class="panel-hint keys"><kbd>↑</kbd><kbd>↓</kbd> amount · <kbd>←</kbd><kbd>→</kbd> move · <kbd>B</kbd><kbd>R</kbd><kbd>C</kbd><kbd>D</kbd> act · <kbd>M</kbd> mute</p>`, 'action panel');
   }
 
   private renderSound(): void {
@@ -1922,7 +1945,7 @@ export class App {
       .reverse()
       .map((e) => `<li class="who-${e.who}">${e.html}</li>`)
       .join('');
-    this.el.side.innerHTML = `
+    setHtml(this.el.side, `
       <details class="panel rankings" open lang="en">
         <summary>Hand rankings</summary>
         <ol class="rank-list">${ranks}</ol>
@@ -1932,7 +1955,7 @@ export class App {
       <section class="panel log">
         <h2>Table log</h2>
         <ol class="log-list">${log || '<li class="muted">No hands played yet.</li>'}</ol>
-      </section>`;
+      </section>`, 'side panel');
   }
 
   private renderOverlay(): void {
@@ -2018,7 +2041,7 @@ export class App {
             <p class="seg-info">${DIFFICULTY_INFO[this.difficulty]}</p>
           </fieldset>
           ${tableSections}`;
-      o.innerHTML = `
+      setHtml(o, `
         <div class="dialog setup" role="dialog" aria-modal="true" aria-label="New match">
           <h2 class="setup-title"><span class="logo-star" aria-hidden="true">★</span>${TITLE}</h2>
           <div class="segs two mode-tabs" role="radiogroup" aria-label="Game mode">
@@ -2034,7 +2057,7 @@ export class App {
                 : '<button type="button" class="primary" data-cmd="start">Deal <kbd>Enter</kbd></button>'
             }
           </div>
-        </div>`;
+        </div>`, 'dialog');
     } else if (this.screen === 'lobby') {
       const s = this.online;
       const r = s?.room;
@@ -2061,12 +2084,12 @@ export class App {
           ${settingsLine}
           <p class="waiting"><span class="dots" aria-hidden="true"></span>${s!.link === 'open' ? 'Waiting for an opponent to join…' : 'Reconnecting…'}</p>`;
       }
-      o.innerHTML = `
+      setHtml(o, `
         <div class="dialog lobby" role="dialog" aria-modal="true" aria-label="Online room">
           <h2>Online room</h2>
           ${content}
           <div class="dialog-actions"><button type="button" class="ghost" data-cmd="leave">Cancel</button></div>
-        </div>`;
+        </div>`, 'dialog');
     } else if (this.screen === 'flip') {
       const face = this.coinFace!;
       const r = this.online?.room;
@@ -2079,7 +2102,7 @@ export class App {
           : 'Heads — the host goes first. Tails — you go first.';
       const oppReady = !!r && r.ready[1 - r.seat];
       const waiting = !!this.online?.waiting;
-      o.innerHTML = `
+      setHtml(o, `
         <div class="dialog flip" role="dialog" aria-modal="true" aria-label="Coin flip">
           <h2>Coin flip</h2>
           <p class="lead">${lead}</p>
@@ -2096,7 +2119,7 @@ export class App {
             ${r ? '<button type="button" class="ghost" data-cmd="leave">Leave</button>' : ''}
             <button type="button" class="primary" data-cmd="begin" ${this.flipDone && !waiting ? '' : 'disabled'}>${waiting ? 'Waiting…' : 'Play <kbd>Enter</kbd>'}</button>
           </div>
-        </div>`;
+        </div>`, 'dialog');
     } else if (this.screen === 'over') {
       const m = this.match;
       const s = this.online;
@@ -2130,7 +2153,7 @@ export class App {
               : oppReady
                 ? 'Your opponent wants a rematch!'
                 : 'Rematch with the same settings, or leave the room.';
-      o.innerHTML = `
+      setHtml(o, `
         <div class="dialog over ${youWin ? 'win' : 'lose'}" role="dialog" aria-modal="true" aria-label="Game over">
           <h2>${youWin ? 'You win the match!' : `Game over — ${this.theOpp} wins`}</h2>
           <p class="lead">${lead}</p>
@@ -2141,7 +2164,7 @@ export class App {
             ${s ? '<button type="button" class="ghost" data-cmd="leave">Leave room</button>' : ''}
             <button type="button" class="primary" data-cmd="restart" ${s?.waiting || oppLeft ? 'disabled' : ''}>${s ? (s.waiting ? 'Waiting…' : 'Rematch <kbd>Enter</kbd>') : 'Play again <kbd>Enter</kbd>'}</button>
           </div>
-        </div>`;
+        </div>`, 'dialog');
     }
   }
 
