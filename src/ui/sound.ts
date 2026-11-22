@@ -1,9 +1,12 @@
 /**
  * Sound: background music and card-game sound effects, all synthesised with the Web Audio API.
  *
- * Music: the game's own original loop ("Joker's Gambit", music.ts) is the track everywhere. In
- * local development only, a private track from the gitignored local-audio/ folder may be
- * registered with `setLocalTrack` and used for vs-AI matches; it is never part of a build.
+ * Music, in order of preference:
+ *   1. the player's own file (`setCustomTrack`), if they chose one — vs. AI and online, for this
+ *      player only; it stays on their device (see customMusic.ts);
+ *   2. dev only, vs. AI only: a private track from the gitignored local-audio/ folder
+ *      (`setLocalTrack`); it is never part of a build;
+ *   3. the game's own original loop ("Joker's Gambit", music.ts).
  * Browsers only allow audio after a user gesture: the engine is unlocked on the first
  * pointer/key press. Music plays only while a match is running (`startMusic` / `stopMusic`),
  * always from the top; Deal is a user gesture, so autoplay rules are satisfied.
@@ -12,6 +15,14 @@ import { SynthMusic } from './music';
 
 /** Which track a match asks for: the private local file (dev, vs-AI only) or the original loop. */
 export type MusicChoice = 'local' | 'original';
+export type MusicSource = 'custom' | 'local' | 'original';
+
+/** Which source plays: the player's own file wins, then the dev-only local file (if asked for). */
+export function pickMusicSource(o: { custom: boolean; local: boolean; choice: MusicChoice }): MusicSource {
+  if (o.custom) return 'custom';
+  if (o.choice === 'local' && o.local) return 'local';
+  return 'original';
+}
 
 export type Sfx =
   | 'shuffle'
@@ -71,6 +82,12 @@ export class Sound {
   private noiseBuf: AudioBuffer | null = null;
   /** The private local track (dev only), if one was found. */
   private music: HTMLAudioElement | null = null;
+  /** The player's own track (object URL of their file), if they chose one. */
+  private custom: HTMLAudioElement | null = null;
+  private customName: string | null = null;
+  private customUrl: string | null = null;
+  /** Set when the player's file fails while playing (shown in the sound panel). */
+  customError: string | null = null;
   private synth: SynthMusic | null = null;
   private synthOut: GainNode | null = null;
   private choice: MusicChoice = 'original';
@@ -111,6 +128,47 @@ export class Sound {
     return !!this.music && !this.musicFailed;
   }
 
+  /**
+   * The player's own music: `url` is a local object URL of their file (null = back to the
+   * default). It replaces the default track right away, also in a running match (from the top).
+   */
+  setCustomTrack(url: string | null, name: string | null = null): void {
+    if (this.custom) {
+      this.custom.pause();
+      this.custom.removeAttribute('src');
+      this.custom.load();
+    }
+    if (this.customUrl && this.customUrl !== url) URL.revokeObjectURL(this.customUrl);
+    this.custom = null;
+    this.customName = null;
+    this.customUrl = null;
+    this.customError = null;
+    if (url) {
+      const a = new Audio();
+      a.loop = true;
+      a.preload = 'auto';
+      a.src = url;
+      a.addEventListener('error', () => {
+        if (this.custom !== a) return;
+        this.customError = `“${name ?? 'Your file'}” stopped playing — using the default music.`;
+        this.custom = null;
+        this.applyMusic();
+        for (const fn of this.listeners) fn();
+      });
+      this.custom = a;
+      this.customName = name;
+      this.customUrl = url;
+    }
+    this.rewind();
+    this.applyMusic();
+    for (const fn of this.listeners) fn();
+  }
+
+  /** File name of the player's own music, or null when the default plays. */
+  get customTrackName(): string | null {
+    return this.custom ? this.customName : null;
+  }
+
   /** Match started: play the track from the beginning (silent if music is muted). */
   startMusic(choice: MusicChoice = 'original'): void {
     this.choice = choice;
@@ -122,16 +180,23 @@ export class Sound {
   /** Match over / back to the start screen: stop and rewind, so the next match starts fresh. */
   stopMusic(): void {
     this.musicOn = false;
+    this.custom?.pause();
     this.music?.pause();
     this.synth?.pause();
     this.rewind();
   }
 
   /** For checks: which track is audibly playing right now. */
-  get musicPlaying(): 'local' | 'original' | null {
+  get musicPlaying(): MusicSource | null {
+    if (this.custom && !this.custom.paused) return 'custom';
     if (this.music && !this.music.paused) return 'local';
     if (this.synth?.playing) return 'original';
     return null;
+  }
+
+  /** For checks: playback position of the player's own file (s). */
+  get customPosition(): number {
+    return this.custom?.currentTime ?? 0;
   }
 
   /** For checks: position of the original loop (16th steps). */
@@ -140,9 +205,10 @@ export class Sound {
   }
 
   private rewind(): void {
-    if (this.music) {
+    for (const a of [this.music, this.custom]) {
+      if (!a) continue;
       try {
-        this.music.currentTime = 0;
+        a.currentTime = 0;
       } catch {
         /* not loaded yet: it starts at 0 anyway */
       }
@@ -209,14 +275,17 @@ export class Sound {
   private applyMusic(): void {
     const s = this.settings;
     const want = this.musicOn && !s.musicMuted && s.musicVolume > 0;
-    const useFile = this.choice === 'local' && !!this.music && !this.musicFailed;
-    if (this.music) {
-      this.music.volume = s.musicVolume * MUSIC_CEILING;
-      if (want && useFile && this.music.paused) {
-        this.music.play().catch(() => {
+    const source = pickMusicSource({ custom: !!this.custom, local: !!this.music && !this.musicFailed, choice: this.choice });
+    const useFile = source !== 'original';
+    for (const [a, src] of [[this.custom, 'custom'], [this.music, 'local']] as const) {
+      if (!a) continue;
+      a.volume = s.musicVolume * MUSIC_CEILING;
+      const on = want && source === src;
+      if (on && a.paused) {
+        a.play().catch(() => {
           /* blocked: stay silent */
         });
-      } else if ((!want || !useFile) && !this.music.paused) this.music.pause();
+      } else if (!on && !a.paused) a.pause();
     }
     // The original loop needs the audio engine (created on the first user gesture).
     if (this.ctx && !this.synth) {

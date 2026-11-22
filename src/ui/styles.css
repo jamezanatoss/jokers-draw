@@ -2380,3 +2380,55 @@ legend {
     min-width: 0;
   }
 }
+
+/* ------------------------------------------------------------------ your music (sound panel) */
+.music-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
+}
+.music-now {
+  min-width: 0;
+  font-size: 0.85em;
+  color: var(--ink-dim);
+  overflow-wrap: anywhere;
+}
+.music-now b {
+  color: var(--ink);
+}
+.music-now small {
+  margin-left: 4px;
+  color: var(--ink-dim);
+}
+.music-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.file-btn {
+  position: relative;
+  cursor: pointer;
+}
+.file-btn:focus-within {
+  outline: 3px solid var(--gold-strong);
+  outline-offset: 2px;
+}
+.music-msg {
+  margin: 0;
+  font-size: 0.8em;
+  overflow-wrap: anywhere;
+}
+.music-msg.ok {
+  color: var(--win);
+}
+.music-msg.err {
+  color: var(--lose);
+}
+.music-note {
+  margin: 0;
+  font-size: 0.72em;
+  color: var(--ink-dim);
+}

@@ -34,6 +34,7 @@ import { SWIPE, exchangeDisplay, sortedDisplay, swipeHand } from './animation';
 import { amountRange, clampAmount, defaultAmount, previews } from './betControls';
 import { cardBack, cardFace, discardCard, rankExample } from './cardView';
 import { type RulesLang, modeLineTh, rulesHtmlTh } from './rulesTh';
+import { checkAudioFile, clearCustomTrack, loadCustomTrack, probePlayable, saveCustomTrack } from './customMusic';
 import { setHtml } from './safeHtml';
 import { Sound } from './sound';
 import { RANKINGS, RULES_HTML, TIEBREAK_LABEL, TITLE } from './text';
@@ -186,6 +187,8 @@ export class App {
   /** Placeholder ids for the opponent's (unknown) drawn cards. */
   private oppSeq = 0;
   private copied = false;
+  /** Last message of the "your music" picker. */
+  private musicMsg: { kind: 'ok' | 'err'; text: string } | null = null;
   /** Host's turn timer choice (seconds, 0 = off). */
   private turnSeconds: TurnSeconds = Number(loadPref('timer', '30', ['0', '15', '30', '60'] as const)) as TurnSeconds;
   /** State messages received but not handled yet (a newer one makes older ones obsolete). */
@@ -249,6 +252,10 @@ export class App {
     // Warm up the AI lookup tables after the first paint.
     setTimeout(() => getTables(this.jokers), 50);
     if (DEBUG) (window as unknown as { __jd: App }).__jd = this; // inspect from the console / tests
+    // The player's own music, remembered in this browser (IndexedDB). Never uploaded.
+    void loadCustomTrack().then((rec) => {
+      if (rec) this.sound.setCustomTrack(URL.createObjectURL(rec.blob), rec.name);
+    });
     if (LOCAL_TRACK) {
       fetch(LOCAL_TRACK, { method: 'HEAD' })
         .then((r) => {
@@ -1200,6 +1207,62 @@ export class App {
     }
   }
 
+  // ------------------------------------------------------------------ your music
+
+  /** A file picked in the sound panel: check it, play it, remember it on this device. */
+  private async chooseMusic(file: File): Promise<void> {
+    const bad = checkAudioFile(file);
+    if (bad) {
+      this.musicMsg = { kind: 'err', text: bad };
+      this.renderSound();
+      return;
+    }
+    this.musicMsg = { kind: 'ok', text: `Checking “${file.name}”…` };
+    this.renderSound();
+    const url = URL.createObjectURL(file);
+    const unplayable = await probePlayable(url, file.name);
+    if (unplayable) {
+      URL.revokeObjectURL(url);
+      this.musicMsg = { kind: 'err', text: unplayable };
+      this.renderSound();
+      return;
+    }
+    this.sound.setCustomTrack(url, file.name);
+    try {
+      await saveCustomTrack(file, file.name);
+      this.musicMsg = { kind: 'ok', text: 'Saved in this browser — it replaces the default music.' };
+    } catch {
+      this.musicMsg = { kind: 'ok', text: "Playing your file now, but this browser can't remember it for next time." };
+    }
+    this.sound.play('click');
+    this.renderSound();
+  }
+
+  private async useDefaultMusic(): Promise<void> {
+    this.sound.setCustomTrack(null);
+    await clearCustomTrack();
+    this.musicMsg = { kind: 'ok', text: "Back to the default music, “Joker's Gambit”." };
+    this.sound.play('click');
+    this.renderSound();
+  }
+
+  /** The "your music" block of the sound panel (rebuilt on every sound change). */
+  private musicPickHtml(): string {
+    const name = this.sound.customTrackName;
+    const err = this.sound.customError;
+    const msg = err ? { kind: 'err', text: err } : this.musicMsg;
+    return `
+      <div class="music-now">Music: ${
+        name ? `<b title="${escapeHtml(name)}">${escapeHtml(name)}</b> <small>your file</small>` : "<b>Joker's Gambit</b> <small>default</small>"
+      }</div>
+      <div class="music-btns">
+        <label class="ghost small file-btn">Choose music file…<input type="file" name="music-file" accept="audio/*" class="sr"></label>
+        ${name ? '<button type="button" class="ghost small" data-cmd="music-default">Use default music</button>' : ''}
+      </div>
+      ${msg ? `<p class="music-msg ${msg.kind}" role="${msg.kind === 'err' ? 'alert' : 'status'}">${escapeHtml(msg.text)}</p>` : ''}
+      <p class="music-note">Your file stays on this device — it is never uploaded.</p>`;
+  }
+
   // ------------------------------------------------------------------ text
 
   private get opp(): string {
@@ -1346,6 +1409,9 @@ export class App {
       case 'mute-music':
         this.sound.toggleMusic();
         break;
+      case 'music-default':
+        void this.useDefaultMusic();
+        break;
       case 'mute-sfx':
         this.sound.toggleSfx();
         this.sound.play('click');
@@ -1407,6 +1473,12 @@ export class App {
 
   private onChange(e: Event): void {
     const t = e.target as HTMLInputElement;
+    if (t.type === 'file' && t.name === 'music-file') {
+      const f = t.files?.[0];
+      t.value = ''; // choosing the same file again still fires
+      if (f) void this.chooseMusic(f);
+      return;
+    }
     if (t.type !== 'radio') return;
     if (t.name === 'mode') {
       this.playMode = t.value === 'online' ? 'online' : 'ai';
@@ -1901,6 +1973,12 @@ export class App {
   }
 
   private renderSound(): void {
+    this.renderSoundControls();
+    const pick = this.el.soundPanel.querySelector('.music-pick');
+    if (pick) setHtml(pick, this.musicPickHtml(), 'music picker');
+  }
+
+  private renderSoundControls(): void {
     const s = this.sound.settings;
     const row = (label: string, name: string, vol: number, muted: boolean, cmd: string) => `
       <div class="sound-row">
@@ -1913,7 +1991,8 @@ export class App {
     if (!body.querySelector('input')) {
       body.innerHTML =
         row('Music', 'music-volume', s.musicVolume, s.musicMuted, 'mute-music') +
-        row('Effects', 'sfx-volume', s.sfxVolume, s.sfxMuted, 'mute-sfx');
+        row('Effects', 'sfx-volume', s.sfxVolume, s.sfxMuted, 'mute-sfx') +
+        '<div class="music-pick" aria-label="Your music"></div>';
     } else {
       const rows = body.querySelectorAll('.sound-row');
       ([[s.musicVolume, s.musicMuted], [s.sfxVolume, s.sfxMuted]] as const).forEach(([vol, muted], i) => {

@@ -206,6 +206,17 @@ With `prefers-reduced-motion` the banner just appears and disappears, and nothin
   everything. Settings, along with difficulty, turn order and Joker count, are saved in
   `localStorage`.
 
+**Your own music.** In the *Sound* section of the action panel:
+- **Choosing a file:** **Choose music file…** takes any audio file the browser can play. It replaces
+  *Joker's Gambit* vs. the AI and online, for you only (your opponent keeps their own music).
+  **Use default music** switches back.
+- **Rules:** the same start, stop, rewind, volume and mute rules apply.
+- **Privacy:** the file stays on your device. It's kept in this browser's IndexedDB, so it's
+  remembered next time, and played from a local object URL. It is never uploaded or sent to the
+  room server.
+- **Bad files:** non-audio, empty, over 60 MB or unplayable files are rejected with a message, and
+  the current music keeps playing.
+
 **Private local track (dev only).** If `local-audio/osiris.mp3` exists, *vs-AI* matches use it
 during `npm run dev`. That folder is gitignored and outside `public/`, so the file can never be
 built or deployed. In production builds the path doesn't even exist in the code
