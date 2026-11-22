@@ -1,0 +1,8 @@
+node_modules
+dist
+.wrangler
+.dev.vars*
+.env*
+!.env.example
+# Private, copyrighted music for local play only. Never commit or deploy.
+local-audio/
