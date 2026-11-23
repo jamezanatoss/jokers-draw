@@ -187,6 +187,10 @@ export class App {
   /** Placeholder ids for the opponent's (unknown) drawn cards. */
   private oppSeq = 0;
   private copied = false;
+  /** Phone: which bottom sheet is open (rankings, log, sound). */
+  private sheet: 'ranks' | 'log' | 'sound' | null = null;
+  /** Phone: the discards popover is open. */
+  private discOpen = false;
   /** Last message of the "your music" picker. */
   private musicMsg: { kind: 'ok' | 'err'; text: string } | null = null;
   /** Host's turn timer choice (seconds, 0 = off). */
@@ -204,9 +208,12 @@ export class App {
         <h1 class="logo"><span class="logo-star" aria-hidden="true">★</span>${TITLE}</h1>
         <nav class="topnav">
           <span id="net" class="net-ind" role="status" hidden></span>
+          <button type="button" class="ghost icon phone-only" data-cmd="sheet" data-sheet="ranks" aria-label="Hand rankings" title="Hand rankings"><span aria-hidden="true">♠</span></button>
+          <button type="button" class="ghost icon phone-only" data-cmd="sheet" data-sheet="log" aria-label="Table log" title="Table log"><span aria-hidden="true">☰</span></button>
+          <button type="button" class="ghost icon phone-only" data-cmd="sheet" data-sheet="sound" aria-label="Sound and music" title="Sound and music"><span aria-hidden="true">♪</span></button>
           <button type="button" class="ghost icon" data-cmd="mute-all" id="mute-all" aria-pressed="false" title="Mute all sound (M)"></button>
-          <button type="button" class="ghost" data-cmd="rules">Rules</button>
-          <button type="button" class="ghost" data-cmd="new">New game</button>
+          <button type="button" class="ghost" data-cmd="rules" aria-label="Rules"><span class="ico" aria-hidden="true">?</span><span class="lbl">Rules</span></button>
+          <button type="button" class="ghost" data-cmd="new" aria-label="New game"><span class="ico" aria-hidden="true">↺</span><span class="lbl">New game</span></button>
         </nav>
       </header>
       <main class="layout">
@@ -219,12 +226,14 @@ export class App {
             <div id="actions" class="actions-dyn"></div>
             <details class="sound-panel" id="sound-panel">
               <summary>Sound</summary>
+              <button type="button" class="sheet-close" data-cmd="close-sheet" aria-label="Close">✕</button>
               <div class="sound-body"></div>
             </details>
           </aside>
         </section>
         <aside id="side" class="side" aria-label="Hand rankings and log"></aside>
       </main>
+      <div id="sheet-backdrop" class="sheet-backdrop" data-cmd="close-sheet" hidden></div>
       <div id="overlay" class="overlay" hidden></div>
       <div id="modal" class="overlay modal" hidden></div>`;
     this.el = {
@@ -332,6 +341,7 @@ export class App {
   private showNewHand(): Promise<void> {
     const m = this.match!;
     this.resultShown = false;
+    this.discOpen = false;
     this.selected.clear();
     this.amount = 0; // never carried over between hands
     // Cards arrive in dealt order; they are sorted by the swipe animation.
@@ -403,7 +413,8 @@ export class App {
     const cards = hand ? Array.from(hand.querySelectorAll<HTMLElement>('.card')) : [];
     const row = this.el.felt.querySelector<HTMLElement>(`.drow[data-owner="${p}"] .dcards`);
     if (!row) return;
-    const box = row.getBoundingClientRect();
+    let box = row.getBoundingClientRect();
+    if (box.width === 0) box = (this.el.felt.querySelector('.dchip') ?? row).getBoundingClientRect(); // phone: collapsed into a chip
     const lastCard = row.lastElementChild?.getBoundingClientRect();
     const dh = box.height;
     const dw = dh / 1.4;
@@ -1207,6 +1218,22 @@ export class App {
     }
   }
 
+  // ------------------------------------------------------------------ phone sheets
+
+  /** Phone: open a bottom sheet (hand rankings, table log, sound & music), or close it (null). */
+  private openSheet(name: 'ranks' | 'log' | 'sound' | null): void {
+    this.sheet = this.sheet === name ? null : name;
+    if (this.sheet) document.body.dataset.sheet = this.sheet;
+    else delete document.body.dataset.sheet;
+    const backdrop = document.getElementById('sheet-backdrop');
+    if (backdrop) backdrop.hidden = !this.sheet;
+    if (this.sheet === 'sound') (document.getElementById('sound-panel') as HTMLDetailsElement).open = true;
+    for (const b of document.querySelectorAll<HTMLElement>('[data-cmd="sheet"]')) {
+      b.setAttribute('aria-pressed', String(b.dataset.sheet === this.sheet));
+    }
+    if (this.sheet) this.focus(this.sheet === 'sound' ? '#sound-panel .sheet-close' : '#side .sheet-close');
+  }
+
   // ------------------------------------------------------------------ your music
 
   /** A file picked in the sound panel: check it, play it, remember it on this device. */
@@ -1409,6 +1436,19 @@ export class App {
       case 'mute-music':
         this.sound.toggleMusic();
         break;
+      case 'sheet':
+        this.openSheet((t.dataset.sheet as 'ranks' | 'log' | 'sound') ?? null);
+        break;
+      case 'close-sheet':
+        this.openSheet(null);
+        break;
+      case 'discards': {
+        this.discOpen = !this.discOpen;
+        const box = this.el.felt.querySelector('.discard-box');
+        box?.classList.toggle('open', this.discOpen);
+        t.setAttribute('aria-expanded', String(this.discOpen));
+        break;
+      }
       case 'music-default':
         void this.useDefaultMusic();
         break;
@@ -1527,6 +1567,11 @@ export class App {
     if (key === 'm' || key === 'M') {
       e.preventDefault();
       this.sound.toggleAll();
+      return;
+    }
+    if (this.sheet && key === 'Escape') {
+      e.preventDefault();
+      this.openSheet(null);
       return;
     }
     if (this.modalOpen) {
@@ -1809,7 +1854,10 @@ export class App {
         <span class="downer">${label}<b>${n}</b></span>
         <div class="dcards">${html}</div></div>`;
     };
-    return `<div class="discard-box ${up ? 'up' : 'down'}" title="Discarded cards are out until the next hand">
+    const count = (p: PlayerId) => h.discards[p].length;
+    return `<div class="discard-box ${up ? 'up' : 'down'}${this.discOpen ? ' open' : ''}" title="Discarded cards are out until the next hand">
+      <button type="button" class="dchip" data-cmd="discards" aria-expanded="${this.discOpen}" aria-label="Discards: ${this.oppTag} ${count(AI)}, you ${count(HUMAN)}${up ? ' — show the cards' : ''}">
+        <span class="dchip-t">Discards</span><b>${count(AI)}</b><span class="dchip-sep">·</span><b class="you">${count(HUMAN)}</b>${up ? '<span class="dchip-more" aria-hidden="true">▾</span>' : ''}</button>
       <div class="dtitle">DISCARDS <small>face ${up ? 'up' : 'down'}</small></div>
       ${row(AI, this.oppTag)}${row(HUMAN, 'YOU')}</div>`;
   }
@@ -1935,7 +1983,7 @@ export class App {
     const hint = this.canSelect(h)
       ? nSel
         ? `<span><b>${plural(nSel, 'card')}</b> marked to exchange</span><button type="button" class="ghost small" data-cmd="clear">Clear <kbd>Esc</kbd></button>`
-        : '<span>Click cards (or <kbd>1</kbd>–<kbd>5</kbd>) to mark them for exchange.</span>'
+        : '<span class="hint-idle">Click cards (or <kbd>1</kbd>–<kbd>5</kbd>) to mark them for exchange.</span><span class="hint-idle-phone">Tap cards to mark them for exchange</span>'
       : view.phase === 'callResponse'
         ? `<span>${this.TheOpp} called at <b>${n}</b> — no more exchanges.</span>`
         : '';
@@ -2025,6 +2073,7 @@ export class App {
       .map((e) => `<li class="who-${e.who}">${e.html}</li>`)
       .join('');
     setHtml(this.el.side, `
+      <button type="button" class="sheet-close" data-cmd="close-sheet" aria-label="Close">✕</button>
       <details class="panel rankings" open lang="en">
         <summary>Hand rankings</summary>
         <ol class="rank-list">${ranks}</ol>

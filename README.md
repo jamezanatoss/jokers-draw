@@ -140,9 +140,25 @@ On desktop (wider than 900 px) the whole game fits in the viewport with no page 
 and spacing sizes scale with `clamp()` on viewport units. The action buttons, raise amount, exchange
 summary and sound controls sit in a panel on the right of the table; rankings and the log are in
 the right column (the log scrolls inside its own box). Checked at 1024x768 up to 1920x1080,
-including a short 1600x650 window. On narrow and phone screens the buttons move below the table,
-the page scrolls vertically, and there is no horizontal scroll. At 390x844 the table and all
-buttons fit on the first screen.
+including a short 1600x650 window. Between 601 and 900 px the buttons move below the table and the
+page scrolls vertically, with no horizontal scroll.
+
+**Phones (600 px wide and below)** get a one-screen layout with no scrolling during play. It also
+fits in-app browsers (Messenger, LINE) whose visible height is smaller.
+- **Sizing:** it uses `100dvh` and the safe-area insets (`viewport-fit=cover`).
+- **Header:** a slim icon row: ♠ rankings, ☰ log, ♪ sound & music, ? rules, ↺ new game.
+- **AI row:** name, coins and BET on one line above smaller cards.
+- **Middle strip:** deck, LAST n, POT (with bet/max) and a **Discards** chip. With face-up
+  discards, tapping the chip shows the cards in a popover.
+- **Status line:** last action and, online, the turn timer and the opponent's connection status.
+- **Your row:** name, coins, BET and your hand's name above larger cards.
+- **Action bar:** pinned to the bottom: your bet − n + on one line, then BET / RAISE / CALL /
+  DROP side by side (short sub-text), or NEXT HAND.
+- **Hand result:** shown as an overlay over the middle strip, so nothing moves.
+- **Sheets:** hand rankings, the table log and the sound settings open as bottom sheets.
+- **Taps:** every tap target is at least 44 px.
+
+Checked at 390x844, 390x664 (in-app browser height), 360x740 and 375x667, vs. AI and online.
 
 ## Card animation
 
