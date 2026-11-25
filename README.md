@@ -249,7 +249,7 @@ src/engine/   pure rules, no DOM
   evaluate.ts   hand evaluation, total-order score, compare + tiebreak explanation
   betting.ts    per-hand state machine: newHand / legalActions / applyAction
   match.ts      coins across hands, loser-acts-first, game over, coin flip
-  view.ts       per-player view (hides opponent cards; Cheater view adds them)
+  view.ts       per-player view (hides opponent cards; the Cheater view adds them — never the deck)
 src/ai/
   tables.ts     lookup tables over 22-bit card masks (one set per Joker mode)
   opponentModel.ts  tendencies + Bayesian range sampling
@@ -430,8 +430,9 @@ score.
 ## AI design
 
 The AI only ever receives a `PlayerView`, so it cannot see your cards (a test checks that its
-decisions don't depend on your hidden hand). Cheater mode is the one exception, and the table
-shows a visible badge while it's on.
+decisions don't depend on your hidden hand). Cheater mode is the one exception: it sees your
+hand, but never the deck, and the table shows a visible badge while it's on. A test checks that
+its decisions don't depend on the deck order.
 
 **Lookup tables** (built once per Joker mode, ~0.2 s): the score of every legal 5-card hand
 indexed by bitmask (stored as a dense rank), its percentile among all hands of that deck, and the
@@ -524,8 +525,10 @@ EVs.
 - **Normal:** 250 unweighted samples, static keep-table exchanges, no learning, no discipline
   layer, higher temperature and occasional mistakes. It is meant to be beatable.
 - **Hard** (default): everything above.
-- **Cheater:** one exact sample, your real hand and the real deck order, through the same EV
-  machinery.
+- **Cheater:** knows your real hand (always up to date after exchanges), but not the deck. Every
+  one of its 1,000 samples holds your real hand, with the unseen cards in a random order. So
+  it uses the same draw simulation and EV machinery as Hard: exact hand-vs-hand knowledge plus the
+  real odds of improving by drawing. No code path gives any AI the deck order.
 
 ### Benchmarks
 
@@ -542,7 +545,11 @@ and a profit ledger by how hands ended.
 | *before* | 76.0% [70–81] | 63.0% [56–69] | 69.5% [63–75] | 70.5% [64–76] |
 | Hard vs. random bot | 98.5% | 98.0% | – | – |
 | Normal vs. heuristic bot | 46.0% [39–53] | 46.0% [39–53] | – | – |
-| Cheater vs. Hard | 99.5% | 100% | – | – |
+| Cheater vs. Hard | 94.5% [90–97] | 91.0% [86–94] | – | – |
+| Cheater vs. heuristic bot | 94.0% [90–97] | 92.0% [87–95] | – | – |
+
+Cheater sees your hand but not the deck (it used to also see the deck order and won 99.5–100%
+against Hard).
 
 What Hard's CALLs look like (same runs):
 

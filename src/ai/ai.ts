@@ -2,8 +2,8 @@
  * AI player.
  *
  * Every decision:
- *   1. Sample the opponent's range (see opponentModel.ts). Cheater mode uses one exact
- *      sample: the real hand and the real deck order.
+ *   1. Sample the opponent's range (see opponentModel.ts). Cheater mode knows the opponent's
+ *      real hand, but not the deck: its samples are random orders of the unseen cards.
  *   2. For each of the 32 discard subsets, play out the draw against every sample using
  *      that sample's remaining deck, and (when the opponent will get another turn) the
  *      opponent's own best redraw. → win probability per subset.
@@ -90,7 +90,7 @@ const CONFIGS: Record<Difficulty, Config> = {
     callMinEq: 0.68,
   },
   cheater: {
-    samples: 1,
+    samples: 1000,
     useBetting: false,
     useExchange: false,
     exchangeTemp: 0.05,

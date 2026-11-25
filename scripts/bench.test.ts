@@ -37,6 +37,7 @@ const PAIRS: [string, Maker, string, Maker][] = [
   ['hard', hard, 'normal', ai('normal')],
   ['hard-before', hardBefore, 'normal', ai('normal')],
   ['cheater', ai('cheater'), 'hard', ai('hard')],
+  ['cheater', ai('cheater'), 'heuristic', (s) => new HeuristicBot(mulberry32(s))],
 ];
 
 /** Wilson score interval for k wins out of n. */

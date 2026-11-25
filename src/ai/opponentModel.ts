@@ -213,8 +213,9 @@ export function callLikelihood(p: number, bluff: number, extra = 0, center = 0.6
 }
 
 /**
- * Sample the opponent's hand. In cheat mode (view.oppHand present) the result is a single
- * exact sample with the real deck order.
+ * Sample the opponent's hand. In cheat mode (view.oppHand present) every sample holds the real
+ * opponent hand; the deck is still unknown, so each sample draws from a random order of the
+ * unseen cards — the same draw simulation as Hard, never the real deck order.
  */
 export function sampleRange(view: PlayerView, t: Tables, rng: Rng, opt: SamplingOptions): RangeSamples {
   const me: PlayerId = view.me;
@@ -246,13 +247,29 @@ export function sampleRange(view: PlayerView, t: Tables, rng: Rng, opt: Sampling
     return { ...s, keepBySize, redrawK, pct, potential, ess: (sw * sw) / sw2 };
   };
 
-  if (view.oppHand && view.deckOrder) {
-    const rest = new Int8Array(stride);
-    view.deckOrder.forEach((c, j) => (rest[j] = c));
+  if (view.oppHand) {
+    // Unseen = every card that is neither in a hand nor discarded: exactly the deck's contents,
+    // in an order the AI does not know. Sample that order (Fisher–Yates per sample).
+    const oppMask = maskOf(view.oppHand);
+    const seenAll = maskOf(view.hand) | maskOf(view.myDiscards) | oppMask | (view.oppDiscards ? maskOf(view.oppDiscards) : 0);
+    const deckCards: number[] = [];
+    for (let c = 0; c < deckSizeFor(view.jokers); c++) if (!(seenAll & (1 << c))) deckCards.push(c);
+    const n = Math.max(1, opt.samples);
+    const rest = new Int8Array(n * stride);
+    const tmp = deckCards.slice();
+    for (let i = 0; i < n; i++) {
+      for (let j = tmp.length - 1; j > 0; j--) {
+        const k = Math.floor(rng() * (j + 1));
+        const x = tmp[j];
+        tmp[j] = tmp[k];
+        tmp[k] = x;
+      }
+      for (let j = 0; j < restLen; j++) rest[i * stride + j] = tmp[j] ?? 0;
+    }
     return finish({
-      n: 1,
-      opp: Int32Array.of(maskOf(view.oppHand)),
-      w: Float64Array.of(1),
+      n,
+      opp: new Int32Array(n).fill(oppMask),
+      w: new Float64Array(n).fill(1),
       rest,
       stride,
       restLen,

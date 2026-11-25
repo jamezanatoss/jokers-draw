@@ -98,7 +98,7 @@ type Kind = 'drop' | 'bet' | 'raise' | 'call' | 'accept';
 const DIFFICULTY_INFO: Record<Difficulty, string> = {
   normal: 'A fair opponent that plays solid but simple poker.',
   hard: 'Reads your exchanges and bets, learns your habits, bluffs and slow-plays.',
-  cheater: 'Sees your cards and the deck order. Just for fun — good luck!',
+  cheater: 'Sees your cards (not the deck). Just for fun — good luck!',
 };
 
 function loadPref<T extends string>(key: string, fallback: T, allowed: readonly T[]): T {
@@ -1798,7 +1798,7 @@ export class App {
         ${seat(AI, this.oppSeatName())}
         <div class="hand ai-hand">${aiCards}</div>
         <div class="zone-side">
-          ${cheater ? '<div class="cheat-badge" title="The AI can see your hand and the deck order"><span class="eye" aria-hidden="true"></span>CHEATER<span class="cheat-long"> — sees your cards &amp; the deck</span></div>' : ''}
+          ${cheater ? '<div class="cheat-badge" title="The AI can see your hand (but not the deck)"><span class="eye" aria-hidden="true"></span>CHEATER<span class="cheat-long"> — sees your cards</span></div>' : ''}
           ${handName(AI)}
         </div>
       </div>

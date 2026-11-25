@@ -291,6 +291,38 @@ describe('fair play', () => {
     expect(run('10S 10H JD QC KC', 'AS AH AD AC KS')).toEqual({ type: 'drop' });
   });
 
+  it('cheater sees your cards but not the deck: its decisions do not depend on the deck order', () => {
+    // Same two hands, same moves, different (shuffled) deck orders → identical decisions,
+    // exchanges and equities. Covers betting and exchanging in both Joker modes.
+    for (const jokers of [1, 2] as const) {
+      for (let n = 0; n < 6; n++) {
+        const base = shuffle(fullDeck(jokers), mulberry32(500 + n));
+        const hands = base.slice(0, 10);
+        const rest = base.slice(10);
+        const decide = (deckSeed: number) => {
+          const deck = [...hands, ...shuffle(rest, mulberry32(deckSeed))];
+          const out: string[] = [];
+          // AI (player 1) first decision, then — after the player raises and exchanges — the
+          // AI's exchange choice. The player's exchange draws different cards in each deck
+          // order, so compare only decisions taken before any draw from the deck.
+          let s = newHand([12, 12], 1, mulberry32(n), deck, jokers);
+          const ai = new AIPlayer({ difficulty: 'cheater', rng: mulberry32(n), me: 1, jokers });
+          const d1 = ai.decide(makeView(s, 1, true));
+          out.push(JSON.stringify(d1.action), d1.thinking.eqNow.toFixed(6), d1.thinking.eqDraw.toFixed(6), JSON.stringify(d1.thinking.discard));
+          if (d1.action.type === 'raise' || d1.action.type === 'bet') {
+            s = applyAction(s, d1.action);
+            const d2 = ai.decide(makeView(s, 1, true));
+            out.push(JSON.stringify(d2.action));
+          }
+          return out;
+        };
+        const a = decide(1);
+        expect(decide(2), `jokers ${jokers} deal ${n}`).toEqual(a);
+        expect(decide(3), `jokers ${jokers} deal ${n}`).toEqual(a);
+      }
+    }
+  });
+
   it('responding to a CALL the AI only ever ACCEPTs or DROPs (all difficulties)', () => {
     for (const d of ['normal', 'hard', 'cheater'] as const) {
       for (let n = 0; n < 15; n++) {

@@ -583,11 +583,13 @@ describe('player view', () => {
     expect(oppExchange.cards).toBeUndefined();
   });
 
-  it('cheat view exposes the opponent hand and deck order', () => {
+  it('cheat view exposes the opponent hand, but never the deck', () => {
     const s = start();
     const v = makeView(s, 1, true);
     expect(v.oppHand).toEqual(s.hands[0]);
-    expect(v.deckOrder).toEqual(s.deck);
+    expect(v.deckCount).toBe(s.deck.length);
+    expect(Object.keys(v)).not.toContain('deckOrder');
+    expect(Object.keys(v)).not.toContain('deck');
   });
 
   it('legal actions are only given to the player to act', () => {

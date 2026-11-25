@@ -48,9 +48,8 @@ export interface PlayerView {
   caller: PlayerId | null;
   history: ViewEvent[];
   legal: LegalActions;
-  /** Cheater-only extras. */
+  /** Cheater only: the opponent's current cards. The deck order is never part of any view. */
   oppHand?: Card[];
-  deckOrder?: Card[];
 }
 
 export function makeView(s: HandState, me: PlayerId, cheat = false): PlayerView {
@@ -89,9 +88,6 @@ export function makeView(s: HandState, me: PlayerId, cheat = false): PlayerView 
     legal: s.toAct === me ? legalActions(s) : legalActions({ ...s, phase: 'over' }),
   };
   if (s.discardsFaceUp || cheat) view.oppDiscards = [...s.discards[opp]];
-  if (cheat) {
-    view.oppHand = [...s.hands[opp]];
-    view.deckOrder = [...s.deck];
-  }
+  if (cheat) view.oppHand = [...s.hands[opp]];
   return view;
 }

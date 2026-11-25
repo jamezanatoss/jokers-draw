@@ -38,6 +38,12 @@ export const RULES_HTML = `
   player discarded is shown, for both sides. The discard box is cleared at the start of every hand.</p>
 </section>
 <section>
+  <h3>Opponent</h3>
+  <p><b>Normal</b>: a fair, beatable opponent. <b>Hard</b>: reads your exchanges and bets and learns your habits.
+  <b>Cheater</b>: sees the cards in your hand (always up to date), but <b>not the deck</b> — what anyone will draw
+  is as unknown to it as to the other levels. A badge on the table shows when it is on.</p>
+</section>
+<section>
   <h3>Coins</h3>
   <p>Both players start with <b>12 coins</b>; the first to reach 0 loses the match.
   Each hand both players ante 1 coin automatically. A player can bet at most <b>5 coins per hand</b>
