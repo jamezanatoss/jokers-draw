@@ -72,8 +72,8 @@ is impossible**. The tests check this over all 20,349 hands, which is why High C
 the game. The side panel shows each hand with five example cards. On a narrow panel the cards sit
 under the name; on a wide one they sit beside it (a CSS container query).
 
-**Joker.** Wild: it becomes the rank and suit that make the best hand. For tiebreaks it counts as
-the ♠ of its rank, but a real card beats an identical Joker card.
+**Joker.** Wild: it becomes the rank and suit that make the best hand. In a tiebreak the Joker itself
+never counts as the highest card.
 
 *Joker rule:* if both hands are the **same category** and exactly one of them holds a Joker, the
 hand with the Joker loses, whatever the ranks and suits. If both hold a Joker (2-Joker mode), the
@@ -90,10 +90,11 @@ uses a seed stored in the hand state.
 1. Category.
 2. Ranks of the defining groups: the pair; for two pair the higher pair, then the lower; for a
    full house the triple. Kickers never count.
-3. Suit of the highest card in the top defining group (A♠A♣ beats A♥A♦). For straights, the
-   highest card. A Joker counts as ♠, and a real card beats an identical Joker card.
-4. Only possible with two Jokers: if both top cards are Jokers standing for the same card (e.g. two
-   Royal Straights with the Joker as the Ace), the highest real card decides.
+3. Without Jokers: the suit of the highest card in the top defining group (A♠A♣ beats A♥A♦); for
+   straights, the highest card. (If only one hand holds a Joker, the Joker rule has already decided.)
+4. Both hands hold a Joker (2-Joker mode only): the Joker is ignored and the **highest real card**
+   decides: rank first, then suit (♠ > ♥ > ♦ > ♣), then the next-highest real card. Example, both
+   Royal Straights: 10♦ J♦ Q♠ K♥ + Joker loses to 10♥ J♥ K♠ A♣ + Joker, because A♣ beats K♥.
 
 The showdown panel names the step that decided the hand. With one Joker, the Joker cases of step 3
 and step 4 can never decide a real game, because the Joker rule settles every Joker-vs-natural pair
@@ -417,8 +418,9 @@ gets an integer `score` that folds in, from most to least significant:
 - category;
 - the Joker rule (a "no Joker" bit right below the category);
 - the group ranks;
-- the suit tiebreak (including "real beats Joker");
-- the highest real card.
+- the last step: for hands without a Joker, the highest card of the top group (its suit); for
+  hands with a Joker, the four real cards from highest to lowest (base 20), which is the
+  both-Joker rule.
 
 Comparing scores therefore gives the full rules as a total order. The tests check this
 exhaustively for both decks: no two hands that can be dealt together share a score, every Joker

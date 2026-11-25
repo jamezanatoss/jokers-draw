@@ -26,6 +26,8 @@ export const TH_EXAMPLES = {
   joker: { withJoker: 'AH AD JK QC 10C', natural: 'KS KH KD JC 10D' },
   /** Suit tiebreak: same pair rank → the side holding A♠ wins. */
   suit: { spade: 'AS AC KH QH JH', heart: 'AH AD KS QS JS' },
+  /** Both hands hold a Joker (2-Joker mode): the highest REAL card decides (A♣ beats K♥). */
+  bothJoker: { lose: '10D JD QS KH JK', win: '10H JH KS AC JK2' },
   /** Display order: unsorted → sorted. */
   sort: { unsorted: 'JK AS 10H KD 10C', sorted: '10C 10H KD AS JK' },
   /** CALL example: AI raises to 2, you CALL 3 (at least +1), AI may only ACCEPT (3) or DROP. */
@@ -128,14 +130,13 @@ ${modeLine}
 <section>
   <h3>กฎ Joker</h3>
   <ul>
-    <li>Joker เป็นไพ่ใบไหนก็ได้ที่ทำให้มือดีที่สุด เวลาตัดสินนับเป็น<b>ดอก ♠</b> ของเลขนั้น
-      แต่ถ้าเจอไพ่จริงใบเดียวกัน ไพ่จริงชนะ</li>
+    <li>Joker เป็นไพ่ใบไหนก็ได้ที่ทำให้มือดีที่สุด แต่เวลาตัดสินมือที่เท่ากัน <b>Joker ไม่นับเป็นไพ่ใบสูงสุด</b></li>
     <li><b>กฎสำคัญ:</b> ถ้ามือเป็นประเภทเดียวกัน และมี Joker อยู่ฝ่ายเดียว — <b>ฝ่ายที่มี Joker แพ้เสมอ</b>
       ไม่ว่าเลขหรือดอกจะเป็นอะไร
       <div class="th-example">${xsCards(E.joker.withJoker)} <span class="muted">ตอง A (มี Joker)</span>
         <span class="vs">vs</span> ${xsCards(E.joker.natural)} <span class="muted">ตอง K ไพ่จริง</span>
         <span class="arrow">→</span> <b class="win">ตอง K ชนะ</b></div></li>
-    <li>ถ้ามี Joker ทั้งสองฝ่าย (โหมด 2 Joker) ตัดสินตามปกติ</li>
+    <li>ถ้ามี Joker ทั้งสองฝ่าย (โหมด 2 Joker) ดูเลขของกลุ่มหลักก่อน ถ้ายังเท่ากันให้ดู<b>ไพ่จริงใบสูงสุด</b> (ดูข้อ 4 ด้านล่าง)</li>
     <li><b>โหมด 2 Joker:</b> ถือ Joker ได้ทีละใบเท่านั้น ถ้าจะได้ใบที่สองตอนแจกหรือเปลี่ยนไพ่
       Joker ใบนั้นจะถูกใส่คืนกองแบบสุ่ม และคุณได้ใบถัดไปแทน (ถ้าไม่เหลือใบอื่น การจั่วนั้นถูกข้าม
       คุณเก็บใบเดิมไว้) · ถ้าทิ้ง Joker ไปแล้ว ภายหลังได้อีกใบได้</li>
@@ -150,7 +151,11 @@ ${modeLine}
     <li>ยังเท่ากันอีก ดู<b>ดอกของไพ่ใบสูงสุดในกลุ่มหลัก</b>: ♠ &gt; ♥ &gt; ♦ &gt; ♣
       <div class="th-example">${xsCards(E.suit.spade)} <span class="vs">vs</span> ${xsCards(E.suit.heart)}
         <span class="arrow">→</span> <b class="win">ฝ่ายที่มี A♠ ชนะ</b></div></li>
-    <li>(เฉพาะ 2 Joker) ถ้าไพ่สูงสุดของทั้งคู่เป็น Joker ที่แทนใบเดียวกัน ให้ดูไพ่จริงใบสูงสุด</li>
+    <li>(เฉพาะ 2 Joker) ถ้ามี Joker ทั้งสองฝ่าย ไม่ต้องดูข้อ 3 — ตัด Joker ออกแล้วดู<b>ไพ่จริงใบสูงสุด</b>:
+      ดูเลขก่อน แล้วดูดอก (♠ &gt; ♥ &gt; ♦ &gt; ♣) ถ้ายังเท่ากันดูไพ่จริงใบถัดไป
+      <div class="th-example">${xsCards(E.bothJoker.lose)} <span class="muted">ไพ่จริงสูงสุด K♥</span>
+        <span class="vs">vs</span> ${xsCards(E.bothJoker.win)} <span class="muted">ไพ่จริงสูงสุด A♣</span>
+        <span class="arrow">→</span> <b class="win">ฝ่ายที่มี A♣ ชนะ</b></div></li>
   </ol>
 </section>
 

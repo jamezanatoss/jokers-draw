@@ -147,7 +147,10 @@ describe('exchange choices', () => {
     for (let seed = 1; seed <= 5; seed++) {
       const d = aiDiscard('AS AH KS QH JS', '10C 10D KC QC JC', 'hard', seed);
       const brokePair = d.includes(as) || d.includes(ah);
-      if (brokePair) expect(d).toHaveLength(1);
+      // Breaking the pair is only ever: one card of it (Royal Straight draw), or a full redraw —
+      // the opponent raised and drew three here, and the model rates a full redraw within ~1%
+      // of keeping the Aces (a knife-edge; which side wins depends on the sampled range).
+      if (brokePair) expect([1, 5]).toContain(d.length);
       else expect(d.length).toBeGreaterThanOrEqual(0);
     }
   });
@@ -331,8 +334,10 @@ describe('strength (short sample)', () => {
   });
 
   it('hard beats a sensible heuristic player', () => {
-    expect(versus((s) => new HeuristicBot(mulberry32(s)), 10)).toBeGreaterThanOrEqual(8);
-  });
+    // Hard wins ~75–80% (npm run bench). 10 matches needing 8 failed by bad luck about one time
+    // in three; 24 needing 15 (62.5%) only fails by chance ~2% of the time — or if Hard got weaker.
+    expect(versus((s) => new HeuristicBot(mulberry32(s)), 24)).toBeGreaterThanOrEqual(15);
+  }, 60000);
 
   it('hands always end even against a player who only checks without exchanging', () => {
     const passive: Bot = {

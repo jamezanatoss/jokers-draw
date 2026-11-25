@@ -39,6 +39,16 @@ describe('Thai rules examples match the engine', () => {
     expect(compareHands(a, b)).toMatchObject({ winner: 1, reason: 'jokerRule' });
   });
 
+  it('both-Joker example: the highest real card decides (A♣ beats K♥)', () => {
+    const lose = parseCards(TH_EXAMPLES.bothJoker.lose);
+    const win = parseCards(TH_EXAMPLES.bothJoker.win);
+    expect(lose.filter((c) => win.includes(c))).toEqual([]); // both hands can be dealt together
+    expect(evaluateHand(lose).category).toBe(Category.RoyalStraight);
+    expect(evaluateHand(win).category).toBe(Category.RoyalStraight);
+    expect(compareHands(lose, win)).toMatchObject({ winner: 1, reason: 'highestReal' });
+    expect(rulesHtmlTh('')).toContain('ไพ่จริงใบสูงสุด');
+  });
+
   it('suit tiebreak example: the pair holding A♠ wins', () => {
     const r = compareHands(parseCards(TH_EXAMPLES.suit.spade), parseCards(TH_EXAMPLES.suit.heart));
     expect(r).toMatchObject({ winner: 0, reason: 'suit' });

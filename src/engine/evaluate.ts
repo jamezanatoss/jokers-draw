@@ -4,6 +4,7 @@ import {
   HAND_SIZE,
   NUM_RANKS,
   NUM_SUITS,
+  RANK_LABELS,
   RANK_NAMES,
   RANK_PLURALS,
   SPADES,
@@ -76,7 +77,7 @@ export interface Evaluation {
   score: number;
 }
 
-export type TieBreak = 'category' | 'jokerRule' | 'rank' | 'suit' | 'realCard' | 'highestReal';
+export type TieBreak = 'category' | 'jokerRule' | 'rank' | 'suit' | 'highestReal';
 
 export interface Comparison {
   /** 0 if the first hand wins, 1 if the second. */
@@ -85,6 +86,9 @@ export interface Comparison {
   /** Human-readable explanation of what decided it. */
   explanation: string;
 }
+
+/** Range of the last tiebreak field of the score: four real cards, base 20. */
+const TIE_RANGE = 20 ** 4;
 
 interface Partial {
   category: Category;
@@ -151,18 +155,28 @@ function evalSlots(ranks: number[], suits: number[], jokerIdx: number): Partial 
 
   const usesJoker = jokerIdx >= 0;
   // Joker rule folded into the key, right below the category: within the same category a
-  // hand with the Joker ranks below every hand without one. Two Joker hands compare normally.
+  // hand with the Joker ranks below every hand without one.
   const noJoker = usesJoker ? 0 : 1;
   const r1 = compareRanks[0];
   const r2 = compareRanks.length > 1 ? compareRanks[1] : 0;
-  const tie = topVal * 2 + (topIsJoker ? 0 : 1); // 0..39
-  const score = ((((category * 2 + noJoker) * 5 + r1) * 5 + r2) * 40 + tie) * 20 + highestReal;
+  // Last step of the tiebreak (same category, same Joker status, same group ranks):
+  //  - no Joker: the suit of the highest card of the top group (that card is unique);
+  //  - both hands hold a Joker (2-Joker mode): the Joker never counts — the real cards decide,
+  //    highest first, by rank then suit. Encoded as the 4 real cards in descending order.
+  let tie: number;
+  if (usesJoker) {
+    const real: number[] = [];
+    for (let i = 0; i < HAND_SIZE; i++) if (i !== jokerIdx) real.push(ranks[i] * 4 + suits[i]);
+    real.sort((x, y) => y - x);
+    tie = real.reduce((acc, c) => acc * 20 + c, 0); // 0..20^4-1
+  } else tie = topVal;
+  const score = (((category * 2 + noJoker) * 5 + r1) * 5 + r2) * TIE_RANGE + tie;
 
   return { category, groups, compareRanks, topCard: topVal, topCardIsJoker: topIsJoker, highestReal, score };
 }
 
 /** Maximum possible score + 1 (useful for lookup tables). */
-export const SCORE_LIMIT = ((((8 * 2 + 1) * 5 + 4) * 5 + 4) * 40 + 39) * 20 + 20;
+export const SCORE_LIMIT = ((((8 * 2 + 1) * 5 + 4) * 5 + 4) + 1) * TIE_RANGE;
 
 /** Evaluate a 5-card hand. The Joker becomes whatever gives the best hand. */
 export function evaluateHand(cards: readonly Card[]): Evaluation {
@@ -212,8 +226,9 @@ export function scoreHand(cards: readonly Card[]): number {
   return evaluateHand(cards).score;
 }
 
-function topCardText(e: Evaluation): string {
-  return e.topCardIsJoker ? `Joker-as-${cardLabel(e.topCard)}` : cardLabel(e.topCard);
+/** The hand's real (non-Joker) cards, highest first: rank, then suit. */
+function realCardsDesc(e: Evaluation): Card[] {
+  return e.cards.filter((c) => !isJoker(c)).sort((x, y) => y - x);
 }
 
 /**
@@ -253,32 +268,29 @@ export function compareEvaluations(a: Evaluation, b: Evaluation): Comparison {
     }
   }
 
-  if (a.topCard !== b.topCard) {
+  if (a.usesJoker) {
+    // Both hands hold a Joker (2-Joker mode). The Joker never counts as the highest card:
+    // compare the real cards, highest first — rank, then suit (♠ > ♥ > ♦ > ♣).
+    const ra = realCardsDesc(a);
+    const rb = realCardsDesc(b);
+    for (let i = 0; i < ra.length; i++) {
+      if (ra[i] === rb[i]) continue;
+      const aWins = ra[i] > rb[i];
+      const w = aWins ? ra[i] : rb[i];
+      const l = aWins ? rb[i] : ra[i];
+      const which = i === 0 ? 'the highest real card' : 'the next-highest real card';
+      const bySuit = rankOf(w) === rankOf(l) ? ` (same rank — ${SUIT_SYMBOLS.slice().reverse().join(' > ')})` : '';
+      return win(aWins, 'highestReal', `Both hands hold a Joker — ${which} decides: ${cardLabel(w)} beats ${cardLabel(l)}${bySuit}.`);
+    }
+  } else if (a.topCard !== b.topCard) {
     const aWins = a.topCard > b.topCard;
     const w = aWins ? a : b;
     const l = aWins ? b : a;
     return win(
       aWins,
       'suit',
-      `Same ranks — decided by the suit of the highest card: ${topCardText(w)} beats ${topCardText(l)} ` +
+      `Same ranks — decided by the suit of the highest card: ${cardLabel(w.topCard)} beats ${cardLabel(l.topCard)} ` +
         `(${SUIT_SYMBOLS.slice().reverse().join(' > ')}).`,
-    );
-  }
-
-  if (a.topCardIsJoker !== b.topCardIsJoker) {
-    const aWins = !a.topCardIsJoker;
-    const real = cardLabel(a.topCard);
-    return win(aWins, 'realCard', `Joker-as-${real} vs. the real ${real} — the real card wins.`);
-  }
-
-  if (a.highestReal !== b.highestReal) {
-    const aWins = a.highestReal > b.highestReal;
-    const w = cardLabel(aWins ? a.highestReal : b.highestReal);
-    const l = cardLabel(aWins ? b.highestReal : a.highestReal);
-    return win(
-      aWins,
-      'highestReal',
-      `Both top cards are Jokers as ${cardLabel(a.topCard)} — the highest real card decides: ${w} beats ${l}.`,
     );
   }
 
@@ -321,11 +333,10 @@ export function describeHand(e: Evaluation): string {
   }
 }
 
-/** "Joker as A♠" etc, or "" when the hand has no Joker. */
+/** "Joker as A", "Joker as A♥" (in a flush), or "" when the hand has no Joker. */
 export function describeJoker(e: Evaluation): string {
   if (!e.usesJoker || e.jokerAs === null) return '';
-  const r = rankOf(e.jokerAs);
-  // Outside flushes the Joker's suit is irrelevant except for tiebreaks, where it counts as ♠.
-  const s = e.category === Category.RoyalStraightFlush ? suitOf(e.jokerAs) : SPADES;
-  return `Joker as ${cardLabel(makeCard(r, s))}`;
+  // The Joker's suit only matters for a flush; in a tiebreak the Joker never counts at all.
+  if (e.category === Category.RoyalStraightFlush) return `Joker as ${cardLabel(e.jokerAs)}`;
+  return `Joker as ${RANK_LABELS[rankOf(e.jokerAs)]}`;
 }

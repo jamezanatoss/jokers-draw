@@ -19,8 +19,7 @@ export const TIEBREAK_LABEL: Record<TieBreak, string> = {
   rank: 'Rank of the defining group',
   suit: 'Suit of the highest card',
   jokerRule: 'Joker rule (same hand — the one with the Joker loses)',
-  realCard: 'Real card beats the Joker',
-  highestReal: 'Highest real card (both top cards are Jokers)',
+  highestReal: 'Highest real card (both hands hold a Joker)',
 };
 
 export const RULES_HTML = `
@@ -75,8 +74,8 @@ export const RULES_HTML = `
 </section>
 <section>
   <h3>The Joker</h3>
-  <p>The Joker is wild: it becomes whatever rank and suit makes your best hand. For tiebreaks it counts as
-  the ♠ of the rank it became — but a real card beats an identical Joker card.</p>
+  <p>The Joker is wild: it becomes whatever rank and suit makes your best hand. In a tiebreak the Joker
+  itself never counts as the highest card.</p>
   <p><b>Joker rule:</b> if both hands are the <b>same category</b> and only one of them holds a Joker,
   the hand <b>with the Joker loses</b> — whatever the ranks and suits. If both hold a Joker, the normal
   tiebreak applies.</p>
@@ -91,9 +90,10 @@ export const RULES_HTML = `
     <li>Compare the hand category.</li>
     <li>Compare the ranks of the defining groups (pair of A beats pair of K; two pair compares the higher pair,
       then the lower; a full house compares the triple). Kickers never count.</li>
-    <li>Still equal? The suit of the highest card in the top group decides (A♠A♣ beats A♥A♦).
-      A Joker counts as ♠; a real card beats an identical Joker card.</li>
-    <li>Only with two Jokers: if both top cards are Jokers standing for the same card, the highest real card decides.</li>
+    <li>Still equal? The suit of the highest card in the top group decides (A♠A♣ beats A♥A♦).</li>
+    <li>Both hands hold a Joker (2-Joker mode)? After step 2 the Joker is ignored: the <b>highest real card</b>
+      decides — rank first, then suit (♠ &gt; ♥ &gt; ♦ &gt; ♣), then the next-highest real card. Example, both Royal
+      Straights: 10♦ J♦ Q♠ K♥ + Joker loses to 10♥ J♥ K♠ A♣ + Joker, because A♣ beats K♥.</li>
   </ol>
 </section>
 <section>

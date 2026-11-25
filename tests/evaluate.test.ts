@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CATEGORY_NAMES,
   Category,
   type Card,
   JOKER,
@@ -124,12 +125,12 @@ describe('Joker', () => {
     }
   });
 
-  it('Joker as the Ace of a Royal Straight counts as A♠ for the tiebreak', () => {
+  it('Joker as the Ace of a Royal Straight (its suit only matters in a flush)', () => {
     const e = ev('10C JH QD KS JK');
     expect(e.category).toBe(Category.RoyalStraight);
-    expect(e.topCard).toBe(makeCard(4, 3));
-    expect(e.topCardIsJoker).toBe(true);
-    expect(describeJoker(e)).toBe('Joker as A♠');
+    expect(rankOf(e.jokerAs!)).toBe(4);
+    expect(describeJoker(e)).toBe('Joker as A');
+    expect(describeJoker(ev('10H JH QH KH JK'))).toBe('Joker as A♥'); // flush: the suit matters
   });
 
   it('makes Four of a Kind with three of a kind', () => {
@@ -228,16 +229,13 @@ describe('two Jokers (2-Joker mode)', () => {
     expect(cmp('QS QH JD JC JK', 'AS AH KD KC JK2')).toMatchObject({ winner: 1, reason: 'rank' });
   });
 
-  it('both hands with a Joker: suit of the highest card, the Joker counting as ♠', () => {
-    // Royal Straights: Joker as A (= A♠) vs a real A♥ (other Joker plays the 10)
-    expect(cmp('10C JD QH KC JK', 'JS QS KH AH JK2')).toMatchObject({ winner: 0, reason: 'suit' });
-  });
-
-  it('both hands with a Joker: a real card beats an identical Joker card', () => {
-    // Trips: A♥ A♦ + Joker (top = Joker-as-A♠) vs A♠ A♣ + Joker 2 (top = real A♠)
+  it('both hands with a Joker: the Joker never counts as the highest card — the highest real card decides', () => {
+    // Royal Straights: Joker as A vs a real A♥ (other Joker plays the 10) → real cards K♣ vs A♥.
+    expect(cmp('10C JD QH KC JK', 'JS QS KH AH JK2')).toMatchObject({ winner: 1, reason: 'highestReal' });
+    // Trips of Aces both: real A♥ vs real A♠ → A♠ wins (same rank, suit decides).
     const r = cmp('AH AD KC QC JK', 'AS AC KD QD JK2');
-    expect(r).toMatchObject({ winner: 1, reason: 'realCard' });
-    expect(r.explanation).toContain('real card wins');
+    expect(r).toMatchObject({ winner: 1, reason: 'highestReal' });
+    expect(r.explanation).toContain('A♠ beats A♥');
   });
 
   it('both top cards are Jokers as the same card: the highest real card decides', () => {
@@ -423,5 +421,71 @@ describe('descriptions', () => {
     expect(() => evaluateHand([0, 1, 2, 3])).toThrow();
     expect(() => evaluateHand([0, 0, 1, 2, 3])).toThrow();
     expect(() => evaluateHand([0, 1, 2, JOKER, JOKER2])).toThrow();
+  });
+});
+
+describe('both hands hold a Joker (2-Joker mode): the highest REAL card decides', () => {
+  it('regression: 10♦ J♦ Q♠ K♥ + Joker vs 10♥ J♥ K♠ A♣ + Joker → A♣ beats K♥', () => {
+    const ai = '10D JD QS KH JK';
+    const you = '10H JH KS AC JK2';
+    expect(ev(ai).category).toBe(Category.RoyalStraight);
+    expect(ev(you).category).toBe(Category.RoyalStraight);
+    const r = cmp(ai, you);
+    expect(r).toMatchObject({ winner: 1, reason: 'highestReal' });
+    expect(r.explanation).toBe('Both hands hold a Joker — the highest real card decides: A♣ beats K♥.');
+    expect(cmp(you, ai)).toMatchObject({ winner: 0, reason: 'highestReal' });
+    // The AI sees the same order (its tables are built from the score).
+    expect(ev(you).score).toBeGreaterThan(ev(ai).score);
+  });
+
+  // Every category a Joker hand can be (with a Joker you never have One/Two Pair).
+  const cases: [string, string, string, string, string][] = [
+    // [category, losing hand, winning hand, reason, why]
+    ['Five of a Kind', 'KS KH KD KC JK', 'AS AH AD AC JK2', 'rank', 'Aces beat Kings'],
+    ['Four of a Kind', 'QS QH QD 10C JK', 'AS AH AD 10D JK2', 'rank', 'Aces beat Queens'],
+    ['Royal Straight Flush', '10C JC QC KC JK', '10H JH QH KH JK2', 'highestReal', 'K♥ beats K♣'],
+    ['Royal Straight', '10D JD QS KH JK', '10H JH KS AC JK2', 'highestReal', 'A♣ beats K♥'],
+    ['Full House', 'QD QC 10D 10C JK', 'QS QH JD JC JK2', 'highestReal', 'Q♠ beats Q♦'],
+    ['Three of a Kind', 'AH AD KC QC JK', 'AS AC KD QD JK2', 'highestReal', 'A♠ beats A♥'],
+    ['Three of a Kind', 'KS KH AD QC JK', 'KD KC AS JD JK2', 'highestReal', 'A♠ beats A♦'],
+  ];
+  for (const [cat, lose, winH, reason, why] of cases) {
+    it(`${cat}: ${lose} + Joker loses to ${winH} — ${why}`, () => {
+      expect(CATEGORY_NAMES[ev(lose).category]).toBe(cat);
+      expect(CATEGORY_NAMES[ev(winH).category]).toBe(cat);
+      const r = cmp(lose, winH);
+      expect(r.winner).toBe(1);
+      expect(r.reason).toBe(reason);
+      expect(r.explanation).toContain(why);
+      expect(cmp(winH, lose).winner).toBe(0);
+      expect(ev(winH).score).toBeGreaterThan(ev(lose).score);
+    });
+  }
+
+  it('over every pair of Joker hands with equal category and group ranks, the higher real card wins', () => {
+    const jokerHands = ALL22_EVALS.filter((e) => e.usesJoker && e.cards.includes(JOKER)).slice(0, 4000);
+    const others = ALL22_EVALS.filter((e) => e.usesJoker && e.cards.includes(JOKER2));
+    const byKey = new Map<string, typeof others>();
+    for (const e of others) {
+      const k = `${e.category}:${e.compareRanks.join(',')}`;
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k)!.push(e);
+    }
+    let checked = 0;
+    for (const a of jokerHands) {
+      for (const b of byKey.get(`${a.category}:${a.compareRanks.join(',')}`) ?? []) {
+        if (a.cards.some((c) => b.cards.includes(c))) continue; // must be dealable together
+        const realA = a.cards.filter((c) => c < 20).sort((x, y) => y - x);
+        const realB = b.cards.filter((c) => c < 20).sort((x, y) => y - x);
+        const i = realA.findIndex((c, k) => c !== realB[k]);
+        const expected = realA[i] > realB[i] ? 0 : 1;
+        const r = compareEvaluations(a, b);
+        if (r.winner !== expected || r.reason !== 'highestReal' || (a.score > b.score ? 0 : 1) !== expected) {
+          throw new Error(`${a.cards} vs ${b.cards}: got ${r.winner} (${r.reason}), expected ${expected}`);
+        }
+        if (++checked > 200000) return;
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
   });
 });
